@@ -1,10 +1,10 @@
-defmodule SymphonyElixir.Codex.AppServer do
+defmodule SymphonyElixir.Claude.AppServer do
   @moduledoc """
-  Minimal client for the Codex app-server JSON-RPC 2.0 stream over stdio.
+  Client for the claude-app-server JSON-RPC 2.0 bridge over stdio.
   """
 
   require Logger
-  alias SymphonyElixir.{Codex.DynamicTool, Config, PathSafety, SSH}
+  alias SymphonyElixir.{Claude.DynamicTool, Config, PathSafety, SSH}
 
   @initialize_id 1
   @thread_start_id 2
@@ -91,7 +91,7 @@ defmodule SymphonyElixir.Codex.AppServer do
     case start_turn(port, thread_id, prompt, issue, workspace, approval_policy, turn_sandbox_policy) do
       {:ok, turn_id} ->
         session_id = "#{thread_id}-#{turn_id}"
-        Logger.info("Codex session started for #{issue_context(issue)} session_id=#{session_id}")
+        Logger.info("Agent session started for #{issue_context(issue)} session_id=#{session_id}")
 
         emit_message(
           on_message,
@@ -106,7 +106,7 @@ defmodule SymphonyElixir.Codex.AppServer do
 
         case await_turn_completion(port, on_message, tool_executor, auto_approve_requests) do
           {:ok, result} ->
-            Logger.info("Codex session completed for #{issue_context(issue)} session_id=#{session_id}")
+            Logger.info("Agent session completed for #{issue_context(issue)} session_id=#{session_id}")
 
             {:ok,
              %{
@@ -117,7 +117,7 @@ defmodule SymphonyElixir.Codex.AppServer do
              }}
 
           {:error, reason} ->
-            Logger.warning("Codex session ended with error for #{issue_context(issue)} session_id=#{session_id}: #{inspect(reason)}")
+            Logger.warning("Agent session ended with error for #{issue_context(issue)} session_id=#{session_id}: #{inspect(reason)}")
 
             emit_message(
               on_message,
@@ -133,7 +133,7 @@ defmodule SymphonyElixir.Codex.AppServer do
         end
 
       {:error, reason} ->
-        Logger.error("Codex session failed for #{issue_context(issue)}: #{inspect(reason)}")
+        Logger.error("Agent session failed for #{issue_context(issue)}: #{inspect(reason)}")
         emit_message(on_message, :startup_failed, %{reason: reason}, metadata)
         {:error, reason}
     end
@@ -199,7 +199,7 @@ defmodule SymphonyElixir.Codex.AppServer do
             :binary,
             :exit_status,
             :stderr_to_stdout,
-            args: [~c"-lc", String.to_charlist(Config.settings!().codex.command)],
+            args: [~c"-lc", String.to_charlist(Config.settings!().claude.command)],
             cd: String.to_charlist(workspace),
             line: @port_line_bytes
           ]
@@ -217,7 +217,7 @@ defmodule SymphonyElixir.Codex.AppServer do
   defp remote_launch_command(workspace) when is_binary(workspace) do
     [
       "cd #{shell_escape(workspace)}",
-      "exec #{Config.settings!().codex.command}"
+      "exec #{Config.settings!().claude.command}"
     ]
     |> Enum.join(" && ")
   end
@@ -226,7 +226,7 @@ defmodule SymphonyElixir.Codex.AppServer do
     base_metadata =
       case :erlang.port_info(port, :os_pid) do
         {:os_pid, os_pid} ->
-          %{codex_app_server_pid: to_string(os_pid)}
+          %{agent_pid: to_string(os_pid)}
 
         _ ->
           %{}
@@ -263,11 +263,11 @@ defmodule SymphonyElixir.Codex.AppServer do
   end
 
   defp session_policies(workspace, nil) do
-    Config.codex_runtime_settings(workspace)
+    Config.claude_runtime_settings(workspace)
   end
 
   defp session_policies(workspace, worker_host) when is_binary(worker_host) do
-    Config.codex_runtime_settings(workspace, remote: true)
+    Config.claude_runtime_settings(workspace, remote: true)
   end
 
   defp do_start_session(port, workspace, session_policies) do
@@ -330,7 +330,7 @@ defmodule SymphonyElixir.Codex.AppServer do
     receive_loop(
       port,
       on_message,
-      Config.settings!().codex.turn_timeout_ms,
+      Config.settings!().claude.turn_timeout_ms,
       "",
       tool_executor,
       auto_approve_requests
@@ -517,7 +517,7 @@ defmodule SymphonyElixir.Codex.AppServer do
             metadata
           )
 
-          Logger.debug("Codex notification: #{inspect(method)}")
+          Logger.debug("Agent notification: #{inspect(method)}")
           receive_loop(port, on_message, timeout_ms, "", tool_executor, auto_approve_requests)
         end
     end
@@ -920,7 +920,7 @@ defmodule SymphonyElixir.Codex.AppServer do
   end
 
   defp await_response(port, request_id) do
-    with_timeout_response(port, request_id, Config.settings!().codex.read_timeout_ms, "")
+    with_timeout_response(port, request_id, Config.settings!().claude.read_timeout_ms, "")
   end
 
   defp with_timeout_response(port, request_id, timeout_ms, pending_line) do
@@ -972,9 +972,9 @@ defmodule SymphonyElixir.Codex.AppServer do
 
     if text != "" do
       if String.match?(text, ~r/\b(error|warn|warning|failed|fatal|panic|exception)\b/i) do
-        Logger.warning("Codex #{stream_label} output: #{text}")
+        Logger.warning("Agent #{stream_label} output: #{text}")
       else
-        Logger.debug("Codex #{stream_label} output: #{text}")
+        Logger.debug("Agent #{stream_label} output: #{text}")
       end
     end
   end

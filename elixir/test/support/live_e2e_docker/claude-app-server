@@ -1,0 +1,490 @@
+#!/usr/bin/env node
+// claude-app-server: Bridge between Symphony app-server JSON-RPC protocol and Claude Code CLI.
+//
+// Mode 1 (default): Long-lived app-server protocol handler.
+//   Reads JSON-RPC-like messages from stdin (from the Elixir Port).
+//   Spawns `claude` CLI per turn, streams stream-json output back as app-server events.
+//
+// Mode 2 (--mcp-server): Minimal MCP stdio server for the linear_graphql tool.
+//   Invoked as a child process by Claude via --mcp-config.
+
+'use strict';
+
+const { spawn } = require('child_process');
+const readline = require('readline');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+// ─── Utilities ─────────────────────────────────────────────────────────────
+
+function generateUUID() {
+  return crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+}
+
+function writeLine(data) {
+  process.stdout.write(data + '\n');
+}
+
+function logDebug(msg) {
+  process.stderr.write('[claude-app-server] ' + msg + '\n');
+}
+
+// ─── Mode 2: MCP Server ────────────────────────────────────────────────────
+
+function runMcpServer() {
+  const apiKey = process.env.LINEAR_API_KEY || '';
+  const endpoint = process.env.LINEAR_ENDPOINT || 'https://api.linear.app/graphql';
+
+  const LINEAR_GRAPHQL_TOOL = {
+    name: 'linear_graphql',
+    description: 'Execute a raw GraphQL query or mutation against Linear using Symphony\'s configured auth.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['query'],
+      properties: {
+        query: {
+          type: 'string',
+          description: 'GraphQL query or mutation document to execute against Linear.'
+        },
+        variables: {
+          type: ['object', 'null'],
+          description: 'Optional GraphQL variables object.',
+          additionalProperties: true
+        }
+      }
+    }
+  };
+
+  function executeLinearGraphQL(query, variables) {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify({ query, variables: variables || {} });
+      const url = new URL(endpoint);
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': apiKey,
+          'Content-Length': Buffer.byteLength(body)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            resolve({ isError: true, text: `Linear API returned HTTP ${res.statusCode}: ${data}` });
+            return;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            const hasErrors = Array.isArray(parsed.errors) && parsed.errors.length > 0;
+            resolve({ isError: hasErrors, text: JSON.stringify(parsed, null, 2) });
+          } catch (e) {
+            resolve({ isError: true, text: `Failed to parse Linear response: ${e.message}\n${data}` });
+          }
+        });
+      });
+
+      req.on('error', (e) => {
+        resolve({ isError: true, text: `Linear API request failed: ${e.message}` });
+      });
+
+      req.write(body);
+      req.end();
+    });
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+
+  rl.on('line', async (line) => {
+    line = line.trim();
+    if (!line) return;
+
+    let msg;
+    try { msg = JSON.parse(line); } catch (e) { return; }
+
+    // Notifications have no id
+    const isNotification = !Object.prototype.hasOwnProperty.call(msg, 'id');
+
+    if (isNotification) {
+      // No response needed for notifications
+      return;
+    }
+
+    const { id, method, params } = msg;
+
+    if (method === 'initialize') {
+      writeLine(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'symphony-linear', version: '1.0' }
+        }
+      }));
+    } else if (method === 'tools/list') {
+      writeLine(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        result: { tools: [LINEAR_GRAPHQL_TOOL] }
+      }));
+    } else if (method === 'tools/call') {
+      const toolName = params && params.name;
+      const toolArgs = (params && params.arguments) || {};
+
+      if (toolName !== 'linear_graphql') {
+        writeLine(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: `Unknown tool: ${toolName}` }],
+            isError: true
+          }
+        }));
+        return;
+      }
+
+      const query = toolArgs.query;
+      const variables = toolArgs.variables;
+
+      if (!query || typeof query !== 'string' || !query.trim()) {
+        writeLine(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: '`linear_graphql` requires a non-empty `query` string.' }],
+            isError: true
+          }
+        }));
+        return;
+      }
+
+      if (!apiKey) {
+        writeLine(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: 'Symphony is missing Linear auth. Set `tracker.api_key` in `WORKFLOW.md` or export `LINEAR_API_KEY`.' }],
+            isError: true
+          }
+        }));
+        return;
+      }
+
+      try {
+        const result = await executeLinearGraphQL(query.trim(), variables || {});
+        writeLine(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: result.text }],
+            isError: result.isError
+          }
+        }));
+      } catch (e) {
+        writeLine(JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: {
+            content: [{ type: 'text', text: `Tool execution failed: ${e.message}` }],
+            isError: true
+          }
+        }));
+      }
+    } else {
+      // Unknown method — respond with error
+      writeLine(JSON.stringify({
+        jsonrpc: '2.0',
+        id,
+        error: { code: -32601, message: `Method not found: ${method}` }
+      }));
+    }
+  });
+}
+
+// ─── Mode 1: App-Server Protocol ──────────────────────────────────────────
+
+function runAppServer() {
+  // State: thread_id → thread state
+  const threads = new Map();
+
+  function isBypassPermissions(policy) {
+    if (typeof policy === 'string') {
+      return policy === 'never' || policy === 'bypassPermissions';
+    }
+    return false;
+  }
+
+  function mapUsage(u) {
+    if (!u) return undefined;
+    const inputTokens = (u.input_tokens || 0) +
+      (u.cache_read_input_tokens || 0) +
+      (u.cache_creation_input_tokens || 0);
+    const outputTokens = u.output_tokens || 0;
+    return {
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens
+    };
+  }
+
+  function writeMcpConfig(sessionDir) {
+    const linearApiKey = process.env.LINEAR_API_KEY || '';
+    const linearEndpoint = process.env.LINEAR_ENDPOINT || 'https://api.linear.app/graphql';
+    const bridgePath = path.resolve(process.argv[1]);
+
+    const config = {
+      mcpServers: {
+        linear: {
+          command: 'node',
+          args: [bridgePath, '--mcp-server'],
+          env: {
+            LINEAR_API_KEY: linearApiKey,
+            LINEAR_ENDPOINT: linearEndpoint
+          }
+        }
+      }
+    };
+
+    const configPath = path.join(sessionDir, 'mcp-config.json');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return configPath;
+  }
+
+  function spawnClaude(thread, prompt, cwd) {
+    // Create a temp directory for this session's MCP config
+    const sessionId = generateUUID();
+    const sessionDir = path.join(os.tmpdir(), `symphony-bridge-${sessionId}`);
+    fs.mkdirSync(sessionDir, { recursive: true });
+
+    let mcpConfigPath;
+    try {
+      mcpConfigPath = writeMcpConfig(sessionDir);
+    } catch (e) {
+      logDebug(`Failed to write MCP config: ${e.message}`);
+    }
+
+    const args = [
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--cwd', cwd
+    ];
+
+    if (mcpConfigPath) {
+      args.push('--mcp-config', mcpConfigPath);
+    }
+
+    if (thread.claudeSessionId) {
+      args.push('--resume', thread.claudeSessionId);
+    }
+
+    if (isBypassPermissions(thread.approvalPolicy)) {
+      args.push('--dangerously-skip-permissions');
+    }
+
+    args.push('-p');
+
+    logDebug(`Spawning claude ${args.join(' ')}`);
+
+    const claudeProc = spawn('claude', args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      cwd
+    });
+
+    // Write prompt to stdin
+    claudeProc.stdin.write(prompt + '\n');
+    claudeProc.stdin.end();
+
+    // Forward stderr to our stderr (visible in Elixir logs)
+    claudeProc.stderr.on('data', (data) => {
+      process.stderr.write(data);
+    });
+
+    let turnCompleted = false;
+
+    const claudeRl = readline.createInterface({
+      input: claudeProc.stdout,
+      crlfDelay: Infinity
+    });
+
+    claudeRl.on('line', (line) => {
+      line = line.trim();
+      if (!line) return;
+
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch (e) {
+        // Non-JSON output (debug lines from claude) — log and ignore
+        logDebug(`Non-JSON from claude: ${line.slice(0, 200)}`);
+        return;
+      }
+
+      const { type, subtype } = event;
+
+      if (type === 'system' && subtype === 'init') {
+        // Capture the Claude session ID for --resume on next turn
+        if (event.session_id) {
+          thread.claudeSessionId = event.session_id;
+          logDebug(`Captured claude session_id=${event.session_id}`);
+        }
+        // No output — session_started is emitted by the orchestrator after turn/start response
+
+      } else if (type === 'assistant' || type === 'tool_use' || type === 'tool_result') {
+        const usage = mapUsage(event.usage || (event.message && event.message.usage));
+        const params = { payload: event };
+        if (usage) params.usage = usage;
+        writeLine(JSON.stringify({ method: 'notification', params }));
+
+      } else if (type === 'result') {
+        turnCompleted = true;
+        const usage = mapUsage(event.usage);
+
+        if (subtype === 'success' || subtype === 'error_max_turns') {
+          const params = {};
+          if (usage) params.usage = usage;
+          writeLine(JSON.stringify({ method: 'turn/completed', params }));
+
+        } else if (subtype === 'error') {
+          writeLine(JSON.stringify({
+            method: 'turn/failed',
+            params: { reason: event.error || subtype }
+          }));
+
+        } else {
+          writeLine(JSON.stringify({
+            method: 'turn/failed',
+            params: { reason: `unexpected result subtype: ${subtype}` }
+          }));
+        }
+
+      } else {
+        // Other event types (e.g. user, system non-init) — emit as notification
+        writeLine(JSON.stringify({ method: 'notification', params: { payload: event } }));
+      }
+    });
+
+    claudeProc.on('close', (code) => {
+      // Cleanup temp dir
+      try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch (_) {}
+
+      if (!turnCompleted) {
+        if (code === 0) {
+          writeLine(JSON.stringify({ method: 'turn/completed', params: {} }));
+        } else {
+          writeLine(JSON.stringify({
+            method: 'turn/failed',
+            params: { reason: `claude exited with status ${code}` }
+          }));
+        }
+      }
+    });
+
+    claudeProc.on('error', (err) => {
+      if (!turnCompleted) {
+        turnCompleted = true;
+        writeLine(JSON.stringify({
+          method: 'turn/failed',
+          params: { reason: `claude spawn error: ${err.message}` }
+        }));
+      }
+    });
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+
+  rl.on('line', (line) => {
+    line = line.trim();
+    if (!line) return;
+
+    let msg;
+    try { msg = JSON.parse(line); } catch (e) {
+      logDebug(`Failed to parse message: ${line.slice(0, 200)}`);
+      return;
+    }
+
+    const { id, method, params } = msg;
+
+    if (method === 'initialize') {
+      writeLine(JSON.stringify({
+        id,
+        result: {
+          serverInfo: { name: 'claude-bridge', version: '1.0' },
+          capabilities: {}
+        }
+      }));
+
+    } else if (method === 'initialized') {
+      // No-op — notification with no expected response
+
+    } else if (method === 'thread/start') {
+      const threadId = generateUUID();
+      threads.set(threadId, {
+        cwd: (params && params.cwd) || process.cwd(),
+        approvalPolicy: (params && params.approvalPolicy) || null,
+        claudeSessionId: null
+      });
+      writeLine(JSON.stringify({
+        id,
+        result: { thread: { id: threadId } }
+      }));
+
+    } else if (method === 'turn/start') {
+      const threadId = params && params.threadId;
+      const thread = threads.get(threadId);
+
+      if (!thread) {
+        writeLine(JSON.stringify({
+          id,
+          error: { code: -32602, message: `Unknown threadId: ${threadId}` }
+        }));
+        return;
+      }
+
+      // Extract prompt from input array
+      const input = (params && params.input) || [];
+      const promptEntry = input.find(i => i.type === 'text');
+      const prompt = (promptEntry && promptEntry.text) || '';
+
+      // Use cwd from turn/start params if provided, else fall back to thread cwd
+      const cwd = (params && params.cwd) || thread.cwd;
+
+      const turnId = generateUUID();
+
+      // Respond immediately with turn ID — orchestrator awaits this before streaming
+      writeLine(JSON.stringify({
+        id,
+        result: { turn: { id: turnId } }
+      }));
+
+      // Spawn Claude asynchronously (events stream back as they arrive)
+      spawnClaude(thread, prompt, cwd);
+
+    } else {
+      logDebug(`Unhandled method: ${method}`);
+    }
+  });
+
+  rl.on('close', () => {
+    process.exit(0);
+  });
+}
+
+// ─── Entry Point ───────────────────────────────────────────────────────────
+
+const args = process.argv.slice(2);
+
+if (args.includes('--mcp-server')) {
+  runMcpServer();
+} else {
+  runAppServer();
+}

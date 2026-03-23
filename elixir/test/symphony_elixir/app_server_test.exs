@@ -86,7 +86,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-1001")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-supported-turn-policies.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -101,7 +101,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-supported-turn-policies.trace}"
       count=0
@@ -131,7 +131,7 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       issue = %Issue{
         id: "issue-supported-turn-policies",
@@ -155,8 +155,8 @@ defmodule SymphonyElixir.AppServerTest do
 
         write_workflow_file!(Workflow.workflow_file_path(),
           workspace_root: workspace_root,
-          codex_command: "#{codex_binary} app-server",
-          codex_turn_sandbox_policy: configured_policy
+          claude_command: "#{agent_binary} app-server",
+          claude_turn_sandbox_policy: configured_policy
         )
 
         assert {:ok, _result} = AppServer.run(workspace, "Validate supported turn policy", issue)
@@ -193,7 +193,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-88")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-input.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -208,7 +208,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-input.trace}"
       count=0
@@ -236,18 +236,18 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
         id: "issue-input",
         identifier: "MT-88",
         title: "Input needed",
-        description: "Cannot satisfy codex input",
+        description: "Cannot satisfy agent input",
         state: "In Progress",
         url: "https://example.org/issues/MT-88",
         labels: ["backend"]
@@ -272,10 +272,10 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-89")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       count=0
       while IFS= read -r _line; do
@@ -299,11 +299,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -335,7 +335,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-89")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-auto-approve.trace")
       previous_trace = System.get_env("SYMP_TEST_CODex_TRACE")
 
@@ -350,7 +350,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODex_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODex_TRACE:-/tmp/codex-auto-approve.trace}"
       count=0
@@ -382,12 +382,12 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server",
-        codex_approval_policy: "never"
+        claude_command: "#{agent_binary} app-server",
+        claude_approval_policy: "never"
       )
 
       issue = %Issue{
@@ -472,7 +472,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-717")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-tool-user-input-auto-approve.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -487,7 +487,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-tool-user-input-auto-approve.trace}"
       count=0
@@ -519,12 +519,12 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server",
-        codex_approval_policy: "never"
+        claude_command: "#{agent_binary} app-server",
+        claude_approval_policy: "never"
       )
 
       issue = %Issue{
@@ -571,10 +571,10 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-718")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       count=0
       while IFS= read -r _line; do
@@ -604,12 +604,12 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server",
-        codex_approval_policy: "never"
+        claude_command: "#{agent_binary} app-server",
+        claude_approval_policy: "never"
       )
 
       issue = %Issue{
@@ -647,7 +647,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-719")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-tool-user-input-options.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -662,7 +662,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-tool-user-input-options.trace}"
       count=0
@@ -694,11 +694,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -747,7 +747,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-90")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-tool-call.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -762,7 +762,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-tool-call.trace}"
       count=0
@@ -794,11 +794,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -848,7 +848,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-90A")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-supported-tool-call.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -863,7 +863,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-supported-tool-call.trace}"
       count=0
@@ -895,11 +895,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -970,7 +970,7 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-90B")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       trace_file = Path.join(test_root, "codex-tool-call-failed.trace")
       previous_trace = System.get_env("SYMP_TEST_CODEx_TRACE")
 
@@ -985,7 +985,7 @@ defmodule SymphonyElixir.AppServerTest do
       System.put_env("SYMP_TEST_CODEx_TRACE", trace_file)
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       trace_file="${SYMP_TEST_CODEx_TRACE:-/tmp/codex-tool-call-failed.trace}"
       count=0
@@ -1017,11 +1017,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -1076,10 +1076,10 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-91")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       count=0
       while IFS= read -r line; do
@@ -1107,11 +1107,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -1130,7 +1130,7 @@ defmodule SymphonyElixir.AppServerTest do
     end
   end
 
-  test "app server captures codex side output and logs it through Logger" do
+  test "app server captures agent side output and logs it through Logger" do
     test_root =
       Path.join(
         System.tmp_dir!(),
@@ -1140,10 +1140,10 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-92")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       count=0
       while IFS= read -r line; do
@@ -1171,18 +1171,18 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
         id: "issue-stderr",
         identifier: "MT-92",
         title: "Capture stderr",
-        description: "Ensure codex stderr is captured and logged",
+        description: "Ensure agent stderr is captured and logged",
         state: "In Progress",
         url: "https://example.org/issues/MT-92",
         labels: ["backend"]
@@ -1215,10 +1215,10 @@ defmodule SymphonyElixir.AppServerTest do
     try do
       workspace_root = Path.join(test_root, "workspaces")
       workspace = Path.join(workspace_root, "MT-93")
-      codex_binary = Path.join(test_root, "fake-codex")
+      agent_binary = Path.join(test_root, "fake-agent")
       File.mkdir_p!(workspace)
 
-      File.write!(codex_binary, """
+      File.write!(agent_binary, """
       #!/bin/sh
       count=0
       while IFS= read -r line; do
@@ -1246,11 +1246,11 @@ defmodule SymphonyElixir.AppServerTest do
       done
       """)
 
-      File.chmod!(codex_binary, 0o755)
+      File.chmod!(agent_binary, 0o755)
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: workspace_root,
-        codex_command: "#{codex_binary} app-server"
+        claude_command: "#{agent_binary} app-server"
       )
 
       issue = %Issue{
@@ -1335,14 +1335,14 @@ defmodule SymphonyElixir.AppServerTest do
 
       write_workflow_file!(Workflow.workflow_file_path(),
         workspace_root: "/remote/workspaces",
-        codex_command: "fake-remote-codex app-server"
+        claude_command: "fake-remote-codex app-server"
       )
 
       issue = %Issue{
         id: "issue-remote",
         identifier: "MT-REMOTE",
         title: "Run remote app server",
-        description: "Validate ssh-backed codex startup",
+        description: "Validate ssh-backed agent startup",
         state: "In Progress",
         url: "https://example.org/issues/MT-REMOTE",
         labels: ["backend"]
