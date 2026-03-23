@@ -1,6 +1,6 @@
-defmodule SymphonyElixir.Codex.DynamicTool do
+defmodule SymphonyElixir.Claude.DynamicTool do
   @moduledoc """
-  Executes client-side tool calls requested by Codex app-server turns.
+  Executes MCP tool calls for the Claude agent session.
   """
 
   alias SymphonyElixir.Linear.Client
